@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Downloader</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <h1>Video Downloader</h1>
+    <p class="sub">YouTube · X · Pinterest</p>
+
+    <div class="search">
+      <input id="url" type="url" placeholder="Paste a video link" autocomplete="off">
+      <button id="fetch">Go</button>
+    </div>
+
+    <p id="error" class="error hidden"></p>
+
+    <section id="result" class="hidden">
+      <div class="preview">
+        <img id="thumb" alt="">
+        <div class="meta">
+          <h2 id="title"></h2>
+          <p id="info"></p>
+        </div>
+      </div>
+      <div id="qualities" class="qualities"></div>
+    </section>
+
+    <p id="status" class="status hidden"></p>
+  </main>
+
+  <script src="/script.js"></script>
+</body>
+</html>
