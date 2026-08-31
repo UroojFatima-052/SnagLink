@@ -1,9 +1,32 @@
-import yt_dlp
 import os
 import tempfile
 
+import yt_dlp
+
 DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "vidpull")
-JS_RUNTIMES = {"node": {}}
+# bgutil-ytdlp-pot-provider prefers Deno over Node whenever both are on PATH.
+# We only ship/support the Node script path, so point its Deno lookup at a
+# path that can't exist — that makes the Deno provider report unavailable
+# and yt-dlp falls back to the Node provider below.
+JS_RUNTIMES = {"node": {}, "deno": {"path": "snaglink-deno-disabled"}}
+STANDARD = [144, 240, 360, 480, 720, 1080, 1440, 2160]
+
+# YouTube requires a "PO token" to unlock full-quality formats; without one
+# it only hands back a single low-quality fallback. bgutil-ytdlp-pot-provider
+# (vendored below) generates real tokens locally via a Node.js script, and
+# the android client is the one that actually uses them for this.
+POT_SERVER_HOME = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "vendor", "bgutil-ytdlp-pot-provider", "server",
+)
+YOUTUBE_CLIENTS = {
+    "youtube": {"player_client": ["android"]},
+    "youtubepot-bgutilscript": {"server_home": [POT_SERVER_HOME]},
+}
+
+
+def _snap(q):
+    """Round an odd resolution to the nearest familiar label."""
+    return min(STANDARD, key=lambda s: abs(s - q))
 
 
 def _quality(f):
@@ -35,6 +58,8 @@ def get_formats(url):
         "no_warnings": True,
         "js_runtimes": JS_RUNTIMES,
         "noplaylist": True,
+        "extractor_args": YOUTUBE_CLIENTS,
+        "socket_timeout": 15,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -43,7 +68,7 @@ def get_formats(url):
     raw = info.get("formats", [])
     duration = info.get("duration")
 
-    # --- audio track size, to correct merge estimates ---
+    # audio track size — used to correct video-only estimates
     audio_mb = 0
     for f in raw:
         if (f.get("vcodec") or "none") == "none" and f.get("ext") == "m4a":
@@ -84,21 +109,27 @@ def get_formats(url):
                 picked[q] = entry
         return picked
 
-    # try strict mp4/h264 first; if a site gives nothing, accept anything
+    # prefer mp4/h264; fall back to anything if a site offers nothing else
     picked = collect(strict=True)
     if not picked:
         picked = collect(strict=False)
 
     formats = []
+    seen = set()
     for entry in sorted(picked.values(), key=lambda x: x["quality"], reverse=True):
+        snapped = _snap(entry["quality"])
+        if snapped in seen:
+            continue
+        seen.add(snapped)
+
         total = entry["size_mb"]
         if total and not entry["has_audio"]:
             total += audio_mb
 
         formats.append({
-            "quality": entry["quality"],
+            "quality": snapped,
             "height": entry["height"],
-            "label": f"{entry['quality']}p" + (" HD" if entry["quality"] >= 720 else ""),
+            "label": f"{snapped}p" + (" HD" if snapped >= 720 else ""),
             "size_mb": round(total, 1) if total else None,
             "has_audio": entry["has_audio"],
         })
@@ -112,12 +143,37 @@ def get_formats(url):
     }
 
 
-def download(url, height, out_dir=None):
-    """Download at the requested size, merging audio when needed."""
+def download(url, height, out_dir=None, progress_cb=None):
+    """Download at the requested size, merging audio when needed.
+
+    progress_cb(stage, pct), if given, is fed from yt-dlp's own hooks so
+    callers can report live progress instead of only the finished file.
+    """
     out_dir = out_dir or DOWNLOAD_DIR
     os.makedirs(out_dir, exist_ok=True)
 
+    def on_progress(d):
+        if not progress_cb or d.get("status") != "downloading":
+            return
+        info = d.get("info_dict") or {}
+        is_audio_only = (info.get("vcodec") or "none") == "none"
+        total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+        frac = (d.get("downloaded_bytes", 0) / total) if total else 0
+        if is_audio_only:
+            progress_cb("audio", 65 + frac * 30)
+        else:
+            progress_cb("video", frac * 65)
+
+    def on_postprocess(d):
+        if not progress_cb:
+            return
+        if d.get("status") == "started":
+            progress_cb("merging", 96)
+        elif d.get("status") == "finished":
+            progress_cb("merging", 99)
+
     opts = {
+        **({"progress_hooks": [on_progress], "postprocessor_hooks": [on_postprocess]} if progress_cb else {}),
         "format": (
             # 1. ideal: h264 mp4 video + m4a audio (YouTube)
             f"bestvideo[height<={height}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]"
@@ -125,17 +181,20 @@ def download(url, height, out_dir=None):
             f"/bestvideo[height<={height}][ext=mp4]+bestaudio"
             # 3. any video + any audio
             f"/bestvideo[height<={height}]+bestaudio"
-            # 4. pre-combined file at this size (HLS — Pinterest, Twitter)
+            # 4. pre-combined file (HLS — Pinterest, Twitter)
             f"/best[height<={height}]"
-            # 5. absolute last resort — never fails
+            # 5. last resort, never fails
             f"/best"
         ),
         "merge_output_format": "mp4",
         "outtmpl": os.path.join(out_dir, "%(title).80s.%(ext)s"),
-        "quiet": False,
+        "quiet": True,
+        "no_warnings": True,
         "noplaylist": True,
         "js_runtimes": JS_RUNTIMES,
+        "extractor_args": YOUTUBE_CLIENTS,
         "restrictfilenames": True,
+        "socket_timeout": 15,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
