@@ -8,10 +8,25 @@ const $ = (id) => document.getElementById(id);
   const mouse = { x: -9999, y: -9999 };
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  const colors = ['#FF5C5C', '#2CA89A', '#FF8686', '#8A6FD1'];
+  const GAP = 46;
+  let t = 0;
+  let cols, rows, nodes = [];
+
+  function buildGrid(){
+    cols = Math.ceil(w / GAP) + 2;
+    rows = Math.ceil(h / GAP) + 2;
+    nodes = [];
+    for(let i = 0; i < cols; i++) for(let j = 0; j < rows; j++){
+      nodes.push({ ix:i, iy:j, x:i*GAP, y:j*GAP, phase:Math.random()*Math.PI*2, c:colors[(i+j)%colors.length] });
+    }
+  }
+
   function resize(){
     w = canvas.offsetWidth; h = canvas.offsetHeight;
     canvas.width = w * dpr; canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildGrid();
   }
   resize();
   window.addEventListener('resize', resize);
@@ -29,15 +44,6 @@ const $ = (id) => document.getElementById(id);
     const x = e.clientX - r.left, y = e.clientY - r.top;
     if(x >= 0 && x <= w && y >= 0 && y <= h) ripples.push({x, y, born: performance.now()});
   });
-
-  const colors = ['#FF5C5C', '#2CA89A', '#FF8686', '#8A6FD1'];
-  const GAP = 46;
-  let t = 0;
-  const cols = Math.ceil(w / GAP) + 2, rows = Math.ceil(h / GAP) + 2;
-  const nodes = [];
-  for(let i = 0; i < cols; i++) for(let j = 0; j < rows; j++){
-    nodes.push({ ix:i, iy:j, x:i*GAP, y:j*GAP, phase:Math.random()*Math.PI*2, c:colors[(i+j)%colors.length] });
-  }
 
   function draw(){
     t += 0.01;
@@ -150,7 +156,7 @@ const SVG_FACEBOOK = `<svg viewBox="0 0 24 24"><rect width="24" height="24" rx="
 const SVG_PINTEREST = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#E60023"/><path d="M12.3 4.6c-4.3 0-6.5 3.08-6.5 5.65 0 1.56.59 2.94 1.86 3.46.21.08.39 0 .45-.23l.19-.75c.06-.23.03-.31-.13-.51-.37-.44-.6-1.01-.6-1.82 0-2.34 1.75-4.44 4.56-4.44 2.49 0 3.86 1.52 3.86 3.55 0 2.67-1.18 4.92-2.94 4.92-.97 0-1.69-.8-1.46-1.79.28-1.18.82-2.45.82-3.3 0-.76-.41-1.4-1.25-1.4-.99 0-1.79 1.02-1.79 2.39 0 .87.29 1.46.29 1.46s-1 4.2-1.17 4.94c-.35 1.47-.05 3.27-.03 3.45.02.11.15.14.21.06.09-.12 1.24-1.54 1.63-2.97.11-.4.63-2.46.63-2.46.31.59 1.22 1.11 2.18 1.11 2.87 0 4.96-2.64 4.96-5.92 0-3.14-2.56-5.94-6.57-5.94z" fill="#fff"/></svg>`;
 
 const PLATFORM_CARDS = [
-  { name:'YouTube', color:'#FF3B3B', svg:SVG_YOUTUBE, desc:'Any public video, any length, up to 4K.' },
+  { name:'YouTube', color:'#FF3B3B', svg:SVG_YOUTUBE, desc:'Any public video, up to 1080p.' },
   { name:'TikTok', color:'#25F4EE', svg:SVG_TIKTOK, desc:'Grab clips before they vanish from your For You page.' },
   { name:'Instagram', color:'#D62976', svg:SVG_INSTAGRAM, desc:'Reels, posts, and stories, with the sound intact.' },
   { name:'X / Twitter', color:'#F0F0F0', svg:SVG_X, desc:'Grab clips straight out of the timeline, sound included.' },
@@ -243,8 +249,13 @@ const reelRight = $('reelRight');
 
 let videoData = null;   // { title, thumbnail, duration, site, formats }
 let selectedIdx = 0;
-let downloadedBlob = null;
-let downloadedFilename = 'video.mp4';
+let currentJobId = null;
+
+function suggestedFilename(){
+  const sel = videoData && videoData.formats[selectedIdx];
+  const base = (videoData && videoData.title || 'video').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+  return `${base}${sel ? ' ' + sel.label : ''}.mp4`;
+}
 
 function shakeReel(msg){
   deckError.textContent = msg;
@@ -390,22 +401,15 @@ async function onDownload(){
       return;
     }
 
-    const fileRes = await fetch(`/api/download/file/${jobId}`);
-    if(!fileRes.ok){
-      shakeReel('Download failed.');
-      showPanel('choose');
-      return;
-    }
-
-    const disp = fileRes.headers.get('content-disposition') || '';
-    const match = disp.match(/filename="?([^"]+)"?/);
-    downloadedFilename = match ? match[1] : 'video.mp4';
-    downloadedBlob = await fileRes.blob();
+    // the file itself isn't fetched here — it's fetched (and streamed
+    // straight to disk) only when the user clicks "Save to device", so
+    // nothing has to sit fully buffered in browser memory as a blob
+    currentJobId = jobId;
 
     setProgress(100, 'done');
     donePanel.classList.remove('saved');
     doneTitle.textContent = 'Your MP4 is ready';
-    $('doneSub').textContent = `${videoData.title || 'Your video'} · ${sel.label} · deleted from our server.`;
+    $('doneSub').textContent = `${videoData.title || 'Your video'} · ${sel.label} · deleted from our server once saved.`;
     setTimeout(()=> showPanel('done'), 300);
   } catch(err){
     shakeReel('Download failed. Try again.');
@@ -428,35 +432,45 @@ function markSaved(){
 
 let saving = false;
 saveBtn.addEventListener('click', async ()=>{
-  if(!downloadedBlob || saving) return;
+  if(!currentJobId || saving) return;
   saving = true;
+  const downloadUrl = `/api/download/file/${currentJobId}`;
 
   try{
     if(window.showSaveFilePicker){
-      // the picker was actually invoked (may have already shown its own
-      // dialog), so any failure past this point must NOT also trigger the
-      // plain-download fallback below — that would pop a second save
-      // prompt for what looks like one click.
+      // ask where to save BEFORE touching the server — the job's file can
+      // only be fetched once, so if the user cancels here we haven't
+      // wasted it
+      let handle;
       try{
-        const handle = await window.showSaveFilePicker({
-          suggestedName: downloadedFilename,
+        handle = await window.showSaveFilePicker({
+          suggestedName: suggestedFilename(),
           types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
         });
+      } catch(err){
+        return; // user cancelled the picker, nothing was fetched
+      }
+
+      try{
+        const res = await fetch(downloadUrl);
+        if(!res.ok) throw new Error('download failed');
+        // stream the response straight to disk instead of buffering the
+        // whole file in memory first — matters for large videos
         const writable = await handle.createWritable();
-        await writable.write(downloadedBlob);
-        await writable.close();
+        await res.body.pipeTo(writable);
         markSaved();
       } catch(err){
-        if(err.name !== 'AbortError') shakeReel("Couldn't save the file. Try again.");
+        shakeReel("Couldn't save the file. Try again.");
       }
       return;
     }
 
+    // no File System Access API (embedded browsers, etc.) — let the
+    // browser handle it as a normal streamed download instead of fetching
+    // it into JS first
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(downloadedBlob);
-    a.download = downloadedFilename;
+    a.href = downloadUrl;
     a.click();
-    setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
     markSaved();
   } finally {
     saving = false;
@@ -464,7 +478,7 @@ saveBtn.addEventListener('click', async ()=>{
 });
 
 function resetDeck(){
-  videoData = null; selectedIdx = 0; downloadedBlob = null;
+  videoData = null; selectedIdx = 0; currentJobId = null;
   urlInput.value = '';
   showPanel('idle');
 }
