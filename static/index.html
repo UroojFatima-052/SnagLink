@@ -3,34 +3,210 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Downloader</title>
+  <title>SnagLink</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main>
-    <h1>Video Downloader</h1>
-    <p class="sub">YouTube · X · Pinterest</p>
 
-    <div class="search">
-      <input id="url" type="url" placeholder="Paste a video link" autocomplete="off">
-      <button id="fetch">Go</button>
-    </div>
-
-    <p id="error" class="error hidden"></p>
-
-    <section id="result" class="hidden">
-      <div class="preview">
-        <img id="thumb" alt="">
-        <div class="meta">
-          <h2 id="title"></h2>
-          <p id="info"></p>
-        </div>
+  <nav>
+    <div class="nav-inner">
+      <div class="brand">
+        <svg width="30" height="30" viewBox="0 0 30 30">
+          <rect width="30" height="30" rx="9" fill="#FF5C5C"/>
+          <path d="M15 7v9.5" stroke="#1C1C1E" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+          <path d="M11 15l4 4.5 4-4.5" stroke="#1C1C1E" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9.5 22.5h11" stroke="#1C1C1E" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+        SnagLink
       </div>
-      <div id="qualities" class="qualities"></div>
+      <div class="navlinks">
+        <a href="#how">How it works</a>
+        <a href="#platforms">Platforms</a>
+        <a href="#faq">FAQ</a>
+        <a href="#paste" class="nav-cta">Paste a link</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div class="hero-zone"><canvas id="heroCanvas"></canvas></div>
+      <div class="hero-content">
+        <h1>Any video link in.<br>One clean MP4 out.</h1>
+        <p class="lede">Paste a link from YouTube, TikTok, Instagram, or nearly anywhere else. SnagLink finds every available quality, merges the video and audio, and sends the finished file straight to your browser.</p>
+        <div class="hero-actions">
+          <a href="#paste" class="btn-primary">Paste your first link</a>
+          <a href="#how" class="btn-ghost">See how it works</a>
+        </div>
+        <p class="hero-platforms" id="heroPlatforms"></p>
+      </div>
     </section>
 
-    <p id="status" class="status hidden"></p>
+    <section class="deck-section" id="paste">
+      <div class="deck">
+        <div class="deck-top">
+          <span class="deck-label">Snag Deck</span>
+          <span class="deck-status" id="deckStatus">ready</span>
+        </div>
+
+        <!-- idle / fetching -->
+        <div class="deck-panel show" id="panelIdle">
+          <div class="reel-row" id="reelRow">
+            <svg class="reel" id="reelLeft" width="40" height="40" viewBox="0 0 46 46">
+              <circle cx="23" cy="23" r="20" fill="none" stroke="rgba(240,240,240,0.1)" stroke-width="1.5"/>
+              <circle cx="23" cy="23" r="7" fill="none" stroke="#FF5C5C" stroke-width="1.5" opacity="0.75"/>
+              <line x1="23" y1="5" x2="23" y2="12" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+              <line x1="23" y1="34" x2="23" y2="41" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+              <line x1="5" y1="23" x2="12" y2="23" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+              <line x1="34" y1="23" x2="41" y2="23" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+            </svg>
+            <div class="reel-field">
+              <input id="urlInput" type="text" placeholder="drop a video link on the reel&hellip;" autocomplete="off" spellcheck="false">
+            </div>
+            <svg class="reel" id="reelRight" width="40" height="40" viewBox="0 0 46 46">
+              <circle cx="23" cy="23" r="20" fill="none" stroke="rgba(240,240,240,0.1)" stroke-width="1.5"/>
+              <circle cx="23" cy="23" r="7" fill="none" stroke="#2CA89A" stroke-width="1.5" opacity="0.75"/>
+              <line x1="23" y1="5" x2="23" y2="12" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+              <line x1="23" y1="34" x2="23" y2="41" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+              <line x1="5" y1="23" x2="12" y2="23" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+              <line x1="34" y1="23" x2="41" y2="23" stroke="rgba(240,240,240,0.16)" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <button class="fetch-btn" id="fetchBtn"><span class="play-tri"></span><span id="fetchLabel">Fetch qualities</span></button>
+          <div class="deck-hint" id="deckHint">reading available qualities, nothing saved yet&hellip;</div>
+        </div>
+
+        <!-- choose quality -->
+        <div class="deck-panel" id="panelChoose">
+          <div class="meta-row">
+            <div class="meta-thumb" id="metaThumb"></div>
+            <div class="meta-info">
+              <div class="meta-title" id="metaTitle"></div>
+              <div class="meta-sub" id="metaSub"></div>
+            </div>
+            <button class="change-link" id="changeLinkBtn">change link</button>
+          </div>
+          <div class="quality-heading">Choose a quality</div>
+          <div class="quality-grid" id="qualityGrid"></div>
+          <div class="download-bar">
+            <div class="dsum" id="dsum"></div>
+            <button class="merge-btn" id="mergeBtn">Merge &amp; download</button>
+          </div>
+        </div>
+
+        <!-- downloading -->
+        <div class="deck-panel" id="panelDownloading">
+          <div class="bot-track">
+            <div class="bot-wrap" id="botWrap">
+              <div class="bot-tag" id="progressMsg">Fetching video stream&hellip;</div>
+              <div class="bot"></div>
+            </div>
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="progress-labels">
+            <span id="progressLabel">0% complete</span>
+            <span id="progressFormat"></span>
+          </div>
+        </div>
+
+        <!-- done -->
+        <div class="deck-panel" id="panelDone">
+          <div class="done-panel" id="donePanel">
+            <div class="done-check" id="doneCheck">&#10003;</div>
+            <div class="done-title" id="doneTitle">Your MP4 is ready</div>
+            <div class="done-sub" id="doneSub"></div>
+            <div class="done-actions">
+              <button class="save-btn" id="saveBtn">Save to device</button>
+              <button class="again-btn" id="againBtn">Snag another</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="deck-error" id="deckError"></div>
+      </div>
+    </section>
+
+    <section class="how-section" id="how">
+      <div class="wrap how-inner">
+        <div class="how-heading"><h2 id="howHeading"></h2></div>
+        <div class="how-line-wrap">
+          <svg class="how-line-svg" viewBox="0 0 100 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="howLineGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#FF5C5C"/>
+                <stop offset="33%" stop-color="#F5A623"/>
+                <stop offset="66%" stop-color="#2CA89A"/>
+                <stop offset="100%" stop-color="#8A6FD1"/>
+              </linearGradient>
+            </defs>
+            <line id="howLine" x1="12.5" y1="40" x2="87.5" y2="40" stroke="url(#howLineGrad)" stroke-width="2" stroke-dasharray="75" stroke-dashoffset="75"/>
+            <line x1="12.5" y1="40" x2="12.5" y2="20" stroke="rgba(240,240,240,0.28)" stroke-width="1.5"/>
+            <line x1="37.5" y1="40" x2="37.5" y2="20" stroke="rgba(240,240,240,0.28)" stroke-width="1.5"/>
+            <line x1="62.5" y1="40" x2="62.5" y2="20" stroke="rgba(240,240,240,0.28)" stroke-width="1.5"/>
+            <line x1="87.5" y1="40" x2="87.5" y2="20" stroke="rgba(240,240,240,0.28)" stroke-width="1.5"/>
+          </svg>
+          <div class="steps-grid" id="stepsGrid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="plat-section" id="platforms">
+      <div class="wrap plat-inner">
+        <div class="plat-head">
+          <h2>Works basically everywhere.</h2>
+          <p>If a browser can play it, SnagLink can probably grab it.</p>
+        </div>
+        <div class="plat-grid" id="platGrid"></div>
+        <p class="plat-note">Login-gated posts and DRM-locked platforms (Netflix, Spotify, etc.) are the exceptions.</p>
+      </div>
+    </section>
+
+    <section class="faq-section" id="faq">
+      <div class="faq-inner">
+        <div class="faq-head">
+          <h2>Questions, answered.</h2>
+          <p>Everything you might want to know.</p>
+        </div>
+        <div id="faqList"></div>
+      </div>
+    </section>
   </main>
+
+  <footer>
+    <div class="wrap foot-inner">
+      <div class="foot-top">
+        <div class="foot-brand">
+          <div class="brand">
+            <svg width="24" height="24" viewBox="0 0 30 30">
+              <rect width="30" height="30" rx="9" fill="#FF5C5C"/>
+              <path d="M15 7v9.5" stroke="#1C1C1E" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+              <path d="M11 15l4 4.5 4-4.5" stroke="#1C1C1E" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M9.5 22.5h11" stroke="#1C1C1E" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+            </svg>
+            SnagLink
+          </div>
+          <p>Free video downloads from YouTube, TikTok, Instagram, and nearly everywhere else. No accounts, no catches.</p>
+        </div>
+        <div class="foot-cols">
+          <div class="foot-col">
+            <h4>Product</h4>
+            <a href="#paste">Paste a link</a>
+            <a href="#how">How it works</a>
+            <a href="#platforms">Platforms</a>
+          </div>
+          <div class="foot-col">
+            <h4>Support</h4>
+            <a href="#faq">FAQ</a>
+            <a href="#faq">Privacy &amp; storage</a>
+          </div>
+        </div>
+      </div>
+      <div class="foot-bottom">
+        <div>&copy; 2026 SnagLink. Built for personal use only.</div>
+        <div>Made with a little ffmpeg magic.</div>
+      </div>
+    </div>
+  </footer>
 
   <script src="/script.js"></script>
 </body>
