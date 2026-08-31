@@ -25,6 +25,12 @@ POT_SERVER_HOME = os.path.join(
 # back to whatever "ffmpeg" resolves to on PATH (the normal case locally).
 _LOCAL_FFMPEG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "ffmpeg")
 FFMPEG_LOCATION = _LOCAL_FFMPEG if os.path.exists(_LOCAL_FFMPEG) else "ffmpeg"
+
+# Set SNAGLINK_DEBUG=1 to get yt-dlp's full verbose output (including
+# PO-token provider selection/errors) in the server logs instead of the
+# normal quiet output. Turn it back off once done — verbose mode logs
+# request URLs that can include tokens.
+DEBUG = os.environ.get("SNAGLINK_DEBUG") == "1"
 YOUTUBE_CLIENTS = {
     "youtube": {"player_client": ["android"]},
     "youtubepot-bgutilscript": {"server_home": [POT_SERVER_HOME]},
@@ -61,8 +67,9 @@ def _size_mb(f, duration):
 def get_formats(url):
     """Read the page, return clean info + a user-friendly quality list."""
     opts = {
-        "quiet": True,
-        "no_warnings": True,
+        "quiet": not DEBUG,
+        "no_warnings": not DEBUG,
+        "verbose": DEBUG,
         "js_runtimes": JS_RUNTIMES,
         "noplaylist": True,
         "extractor_args": YOUTUBE_CLIENTS,
@@ -196,8 +203,9 @@ def download(url, height, out_dir=None, progress_cb=None):
         "merge_output_format": "mp4",
         "outtmpl": os.path.join(out_dir, "%(title).80s.%(ext)s"),
         "ffmpeg_location": FFMPEG_LOCATION,
-        "quiet": True,
-        "no_warnings": True,
+        "quiet": not DEBUG,
+        "no_warnings": not DEBUG,
+        "verbose": DEBUG,
         "noplaylist": True,
         "js_runtimes": JS_RUNTIMES,
         "extractor_args": YOUTUBE_CLIENTS,
