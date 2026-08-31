@@ -31,13 +31,24 @@ MAX_CONCURRENT_DOWNLOADS = 6  # keep headroom in EXECUTOR for /api/info calls to
 JOB_TTL = 15 * 60  # finished jobs nobody collected get swept up after this
 
 RATE_LIMIT_WINDOW = 60
-RATE_LIMIT_MAX = 12  # requests per IP per window, per limited endpoint
+RATE_LIMIT_MAX = 12  # requests per IP per window, shared across /api/info and /api/download/start
 _rate_buckets = defaultdict(deque)
 _rate_lock = threading.Lock()
 
 
+def _client_ip(request: Request) -> str:
+    # Render (and most PaaS) put the app behind a proxy, so request.client.host
+    # is the proxy's address, identical for every visitor. Trust the header
+    # instead. Only safe because we know Render sets it; on a server exposed
+    # directly to the internet this header is attacker-controlled.
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def rate_limit(request: Request):
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     now = time.monotonic()
     with _rate_lock:
         bucket = _rate_buckets[ip]
@@ -169,9 +180,11 @@ def _run_job(job_id, url, height):
         job["finished_at"] = time.monotonic()
 
 
-def _sweep_stale_jobs():
+def _sweep_stale_state():
     """Jobs nobody ever collected (browser closed, network dropped, etc.)
-    would otherwise sit in memory — and their temp files on disk — forever."""
+    would otherwise sit in memory — and their temp files on disk — forever.
+    Same for rate-limit buckets: a visitor who never comes back still leaves
+    an empty deque sitting in _rate_buckets forever."""
     while True:
         time.sleep(60)
         now = time.monotonic()
@@ -184,9 +197,18 @@ def _sweep_stale_jobs():
                 job = JOBS.pop(jid, None)
                 if job and job.get("work_dir"):
                     shutil.rmtree(job["work_dir"], ignore_errors=True)
+        with _rate_lock:
+            empty_ips = []
+            for ip, bucket in _rate_buckets.items():
+                while bucket and now - bucket[0] > RATE_LIMIT_WINDOW:
+                    bucket.popleft()
+                if not bucket:
+                    empty_ips.append(ip)
+            for ip in empty_ips:
+                del _rate_buckets[ip]
 
 
-threading.Thread(target=_sweep_stale_jobs, daemon=True).start()
+threading.Thread(target=_sweep_stale_state, daemon=True).start()
 
 
 @app.post("/api/download/start")
@@ -211,7 +233,8 @@ def start_download(req: DownloadRequest, _rl: None = Depends(rate_limit)):
 
 @app.get("/api/download/progress/{job_id}")
 def download_progress(job_id: str):
-    job = JOBS.get(job_id)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
     if not job:
         raise HTTPException(404, "Unknown job.")
     return {"stage": job["stage"], "pct": job["pct"], "error": job["error"]}
@@ -219,11 +242,13 @@ def download_progress(job_id: str):
 
 @app.get("/api/download/file/{job_id}")
 def download_file(job_id: str):
-    job = JOBS.get(job_id)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job and job["stage"] == "done":
+            JOBS.pop(job_id, None)
     if not job or job["stage"] != "done":
         raise HTTPException(404, "File not ready.")
 
-    JOBS.pop(job_id, None)
     return FileResponse(
         job["path"],
         media_type="video/mp4",
