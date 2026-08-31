@@ -3,7 +3,7 @@
 Paste a video link, pick a quality, get a single MP4. Works with YouTube, TikTok,
 Instagram, X, Facebook, Pinterest and around 1,700 other sites.
 
-**[Live demo](https://snaglink-ejjy.onrender.com)** · Built with FastAPI, yt-dlp and ffmpeg
+**[Live demo](https://snaglink-uf.onrender.com/)** · Built with FastAPI, yt-dlp and ffmpeg
 
 ## Why this exists
 
