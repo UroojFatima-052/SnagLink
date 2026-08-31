@@ -18,6 +18,13 @@ STANDARD = [144, 240, 360, 480, 720, 1080, 1440, 2160]
 POT_SERVER_HOME = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "vendor", "bgutil-ytdlp-pot-provider", "server",
 )
+
+# Some deploy targets (e.g. Render's native Python build) have no package
+# manager access to install ffmpeg system-wide, so the build step downloads
+# a static binary into ./bin instead. Use it when present, otherwise fall
+# back to whatever "ffmpeg" resolves to on PATH (the normal case locally).
+_LOCAL_FFMPEG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "ffmpeg")
+FFMPEG_LOCATION = _LOCAL_FFMPEG if os.path.exists(_LOCAL_FFMPEG) else "ffmpeg"
 YOUTUBE_CLIENTS = {
     "youtube": {"player_client": ["android"]},
     "youtubepot-bgutilscript": {"server_home": [POT_SERVER_HOME]},
@@ -188,6 +195,7 @@ def download(url, height, out_dir=None, progress_cb=None):
         ),
         "merge_output_format": "mp4",
         "outtmpl": os.path.join(out_dir, "%(title).80s.%(ext)s"),
+        "ffmpeg_location": FFMPEG_LOCATION,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
