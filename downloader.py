@@ -74,6 +74,7 @@ def get_formats(url):
         "noplaylist": True,
         "extractor_args": YOUTUBE_CLIENTS,
         "socket_timeout": 15,
+        "sleep_interval_requests": 1,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -211,6 +212,7 @@ def download(url, height, out_dir=None, progress_cb=None):
         "extractor_args": YOUTUBE_CLIENTS,
         "restrictfilenames": True,
         "socket_timeout": 15,
+        "sleep_interval_requests": 1,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
