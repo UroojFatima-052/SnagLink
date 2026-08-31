@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: snaglink
+    name: snaglink-uf
     runtime: python
     plan: free
     buildCommand: >-
